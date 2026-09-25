@@ -1,0 +1,50 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-2}
+    container_name: ${CONTAINER_NAME:-uptime-kuma}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      UPTIME_KUMA_PORT: ${UPTIME_KUMA_PORT:-3001}
+      # Ограничивает доступ к контейнерным операциям (Docker monitor type),
+      # если он не нужен — не монтируйте docker.sock ниже.
+      UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN: ${UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN:-0}
+    ports:
+      - "${UPTIME_KUMA_PORT:-3001}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+      # Раскомментируйте, если нужен мониторинг Docker-контейнеров.
+      # Помните: доступ к docker.sock даёт root-доступ к хосту, монтируйте
+      # осознанно и по возможности read-only.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uptime_kuma_net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "extra/healthcheck"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${UPTIME_KUMA_CPU_LIMIT:-1}"
+          memory: ${UPTIME_KUMA_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  uptime_kuma_net:
+    driver: bridge
+
+volumes:
+  uptime_kuma_data:

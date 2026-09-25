@@ -1,0 +1,57 @@
+services:
+  alloy-agent:
+    image: grafana/alloy:${ALLOY_VERSION:-latest}
+    container_name: ${CONTAINER_NAME:-alloy-agent}
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    environment:
+      TZ: ${TZ:-UTC}
+      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-}
+      # Адрес центрального Alloy (сервера), куда агент шлёт метрики/логи.
+      CENTRAL_REMOTE_WRITE_URL: ${CENTRAL_REMOTE_WRITE_URL:?CENTRAL_REMOTE_WRITE_URL is required, e.g. http://grafana-alloy-host:9999/api/v1/metrics/write}
+      CENTRAL_LOKI_PUSH_URL: ${CENTRAL_LOKI_PUSH_URL:?CENTRAL_LOKI_PUSH_URL is required, e.g. http://grafana-alloy-host:3100/loki/api/v1/push}
+      CENTRAL_BASIC_AUTH_USERNAME: ${CENTRAL_BASIC_AUTH_USERNAME:-}
+      CENTRAL_BASIC_AUTH_PASSWORD: ${CENTRAL_BASIC_AUTH_PASSWORD:-}
+    ports:
+      - "${ALLOY_UI_PORT:-12345}:12345"
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_agent_data:/var/lib/alloy/data
+      # Метрики хоста (CPU/RAM/диск/сеть) через node/unix exporter компонент.
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+      # Логи Docker-контейнеров хоста.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - alloy_agent_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "${ALLOY_CPU_LIMIT:-0.5}"
+          memory: ${ALLOY_MEM_LIMIT:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  alloy_agent_net:
+    driver: bridge
+
+volumes:
+  alloy_agent_data:

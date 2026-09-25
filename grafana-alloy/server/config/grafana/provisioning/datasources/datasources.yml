@@ -1,0 +1,25 @@
+apiVersion: 1
+
+datasources:
+  - name: Metrics
+    type: prometheus
+    access: proxy
+    url: $__env{METRICS_DATASOURCE_URL}
+    isDefault: true
+    basicAuth: true
+    basicAuthUser: $__env{METRICS_DATASOURCE_USER}
+    secureJsonData:
+      basicAuthPassword: $__env{METRICS_DATASOURCE_PASSWORD}
+    jsonData:
+      timeInterval: "30s"
+    editable: false
+
+  - name: Logs
+    type: loki
+    access: proxy
+    url: $__env{LOGS_DATASOURCE_URL}
+    basicAuth: true
+    basicAuthUser: $__env{LOGS_DATASOURCE_USER}
+    secureJsonData:
+      basicAuthPassword: $__env{LOGS_DATASOURCE_PASSWORD}
+    editable: false
