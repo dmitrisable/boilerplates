@@ -1,0 +1,108 @@
+services:
+  alloy:
+    image: grafana/alloy:${ALLOY_VERSION:-latest}
+    container_name: ${CONTAINER_NAME:-grafana-alloy}
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    environment:
+      TZ: ${TZ:-UTC}
+      # Backend, куда Alloy пересылает метрики/логи, полученные от себя
+      # и от агентов (self-hosted Mimir/Loki/Tempo или Grafana Cloud).
+      REMOTE_WRITE_URL: ${REMOTE_WRITE_URL:?REMOTE_WRITE_URL is required, e.g. Mimir/Grafana Cloud Prometheus endpoint}
+      REMOTE_WRITE_USERNAME: ${REMOTE_WRITE_USERNAME:-}
+      REMOTE_WRITE_PASSWORD: ${REMOTE_WRITE_PASSWORD:-}
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:?LOKI_PUSH_URL is required, e.g. Loki/Grafana Cloud Logs endpoint}
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
+    ports:
+      # Alloy UI / healthchecks
+      - "${ALLOY_UI_PORT:-12345}:12345"
+      # Приём Prometheus remote_write от агентов
+      - "${ALLOY_REMOTE_WRITE_PORT:-9999}:9999"
+      # Приём логов от агентов (Loki push API)
+      - "${ALLOY_LOKI_PORT:-3100}:3100"
+      # Приём OTLP (gRPC/HTTP) при желании использовать OTel-агенты
+      - "${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - grafana_alloy_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "${ALLOY_CPU_LIMIT:-1}"
+          memory: ${ALLOY_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-latest}
+    container_name: ${CONTAINER_NAME:-grafana-alloy}-grafana
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD is required}
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ${GF_INSTALL_PLUGINS:-}
+      # Значения, которые провижининг датасорсов подставит через $__env{}
+      METRICS_DATASOURCE_URL: ${METRICS_DATASOURCE_URL:?METRICS_DATASOURCE_URL is required, e.g. Mimir/Grafana Cloud Prometheus query endpoint}
+      METRICS_DATASOURCE_USER: ${METRICS_DATASOURCE_USER:-}
+      METRICS_DATASOURCE_PASSWORD: ${METRICS_DATASOURCE_PASSWORD:-}
+      LOGS_DATASOURCE_URL: ${LOGS_DATASOURCE_URL:?LOGS_DATASOURCE_URL is required, e.g. Loki/Grafana Cloud Logs query endpoint}
+      LOGS_DATASOURCE_USER: ${LOGS_DATASOURCE_USER:-}
+      LOGS_DATASOURCE_PASSWORD: ${LOGS_DATASOURCE_PASSWORD:-}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - grafana_alloy_net
+    depends_on:
+      alloy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${GRAFANA_CPU_LIMIT:-1}"
+          memory: ${GRAFANA_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  grafana_alloy_net:
+    driver: bridge
+
+volumes:
+  alloy_data:
+  grafana_data:

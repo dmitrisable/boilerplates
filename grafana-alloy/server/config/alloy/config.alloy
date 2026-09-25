@@ -1,0 +1,86 @@
+// Центральный Alloy: принимает метрики/логи от агентов и от самого себя,
+// пересылает их во внешний backend (self-hosted Mimir/Loki или Grafana Cloud).
+// Значения подставляются из переменных окружения контейнера (см. .env).
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// --- Приём Prometheus remote_write от агентов ---
+prometheus.receive_http "agents" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 9999
+  }
+  forward_to = [prometheus.remote_write.central.receiver]
+}
+
+// --- Приём логов от агентов по Loki push API ---
+loki.source.api "agents" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3100
+  }
+  forward_to = [loki.write.central.receiver]
+}
+
+// --- Приём OTLP (метрики/логи/трейсы) от OTel-совместимых источников ---
+otelcol.receiver.otlp "agents" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.exporter.prometheus.central.input]
+    logs    = [otelcol.exporter.loki.central.input]
+  }
+}
+
+otelcol.exporter.prometheus "central" {
+  forward_to = [prometheus.remote_write.central.receiver]
+}
+
+otelcol.exporter.loki "central" {
+  forward_to = [loki.write.central.receiver]
+}
+
+// --- Самомониторинг: собственные метрики Alloy ---
+prometheus.exporter.self "alloy" { }
+
+prometheus.scrape "self" {
+  targets    = prometheus.exporter.self.alloy.targets
+  forward_to = [prometheus.remote_write.central.receiver]
+  scrape_interval = "30s"
+}
+
+// --- Отправка во внешний backend метрик ---
+prometheus.remote_write "central" {
+  endpoint {
+    url = env("REMOTE_WRITE_URL")
+
+    basic_auth {
+      username = env("REMOTE_WRITE_USERNAME")
+      password = env("REMOTE_WRITE_PASSWORD")
+    }
+
+    queue_config {
+      max_samples_per_send = 5000
+      capacity             = 20000
+    }
+  }
+}
+
+// --- Отправка во внешний backend логов ---
+loki.write "central" {
+  endpoint {
+    url = env("LOKI_PUSH_URL")
+
+    basic_auth {
+      username = env("LOKI_USERNAME")
+      password = env("LOKI_PASSWORD")
+    }
+  }
+}

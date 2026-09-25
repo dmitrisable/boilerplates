@@ -1,0 +1,71 @@
+// Alloy-агент для удалённого хоста: собирает системные метрики (CPU/RAM/
+// диск/сеть), логи Docker-контейнеров и пересылает их на центральный Alloy.
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// --- Системные метрики хоста ---
+prometheus.exporter.unix "host" {
+  rootfs_path = "/host/root"
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+
+  disable_collectors = ["mdadm"]
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.central.receiver]
+
+  // Проставляем имя хоста как label instance, чтобы отличать агентов.
+  clustering {
+    enabled = false
+  }
+}
+
+// --- Логи Docker-контейнеров хоста ---
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.docker.containers.targets
+  forward_to = [loki.write.central.receiver]
+}
+
+// --- Пересылка метрик на центральный Alloy ---
+prometheus.remote_write "central" {
+  endpoint {
+    url = env("CENTRAL_REMOTE_WRITE_URL")
+
+    basic_auth {
+      username = env("CENTRAL_BASIC_AUTH_USERNAME")
+      password = env("CENTRAL_BASIC_AUTH_PASSWORD")
+    }
+
+    queue_config {
+      max_samples_per_send = 2000
+      capacity             = 10000
+    }
+  }
+
+  external_labels = {
+    host = coalesce(env("HOSTNAME_OVERRIDE"), env("HOSTNAME")),
+  }
+}
+
+// --- Пересылка логов на центральный Alloy ---
+loki.write "central" {
+  endpoint {
+    url = env("CENTRAL_LOKI_PUSH_URL")
+
+    basic_auth {
+      username = env("CENTRAL_BASIC_AUTH_USERNAME")
+      password = env("CENTRAL_BASIC_AUTH_PASSWORD")
+    }
+  }
+}
