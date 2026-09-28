@@ -9,6 +9,7 @@
 | Директория | Описание |
 | --- | --- |
 | [`postgresql18/`](postgresql18) | PostgreSQL 18 + опциональный pgAdmin |
+| [`mariadb/`](mariadb) | MariaDB + опциональный phpMyAdmin |
 | [`uptime-kuma-2/`](uptime-kuma-2) | Uptime Kuma 2.x — мониторинг доступности |
 | [`grafana-alloy/server/`](grafana-alloy/server) | Grafana + центральный Grafana Alloy |
 | [`grafana-alloy/agent/`](grafana-alloy/agent) | Grafana Alloy — агент для мониторимых хостов |
